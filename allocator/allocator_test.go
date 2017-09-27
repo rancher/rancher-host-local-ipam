@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package allocator
 
 import (
 	"fmt"
+	"net"
+
 	"github.com/containernetworking/cni/pkg/types"
-	fakestore "github.com/containernetworking/cni/plugins/ipam/host-local/backend/testing"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"net"
+	fakestore "github.com/rancher/rancher-host-local-ipam/backend/testing"
 )
 
 type AllocatorTestCase struct {
@@ -148,7 +149,7 @@ var _ = Describe("host-local ip allocator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 1; i < 254; i++ {
-				res, err := alloc.Get("ID")
+				res, err := alloc.Get(fmt.Sprintf("ID-%d", i))
 				Expect(err).ToNot(HaveOccurred())
 				// i+1 because the gateway address is skipped
 				s := fmt.Sprintf("192.168.1.%d/24", i+1)
@@ -173,11 +174,11 @@ var _ = Describe("host-local ip allocator", func() {
 			alloc, err := NewIPAllocator(&conf, store)
 			Expect(err).ToNot(HaveOccurred())
 
-			res, err := alloc.Get("ID")
+			res, err := alloc.Get("ID-1")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.IP.String()).To(Equal("192.168.1.10/24"))
 
-			res, err = alloc.Get("ID")
+			res, err = alloc.Get("ID-2")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(res.IP.String()).To(Equal("192.168.1.11/24"))
 		})
@@ -197,7 +198,7 @@ var _ = Describe("host-local ip allocator", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			for i := 1; i < 5; i++ {
-				res, err := alloc.Get("ID")
+				res, err := alloc.Get(fmt.Sprintf("ID-%d", i))
 				Expect(err).ToNot(HaveOccurred())
 				// i+1 because the gateway address is skipped
 				Expect(res.IP.String()).To(Equal(fmt.Sprintf("192.168.1.%d/24", i+1)))

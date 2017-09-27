@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package allocator
 
 import (
 	"encoding/json"
@@ -24,14 +24,16 @@ import (
 
 // IPAMConfig represents the IP related network configuration.
 type IPAMConfig struct {
-	Name       string
-	Type       string        `json:"type"`
-	RangeStart net.IP        `json:"rangeStart"`
-	RangeEnd   net.IP        `json:"rangeEnd"`
-	Subnet     types.IPNet   `json:"subnet"`
-	Gateway    net.IP        `json:"gateway"`
-	Routes     []types.Route `json:"routes"`
-	Args       *IPAMArgs     `json:"-"`
+	Name         string
+	Type         string        `json:"type"`
+	RangeStart   net.IP        `json:"rangeStart"`
+	RangeEnd     net.IP        `json:"rangeEnd"`
+	Subnet       types.IPNet   `json:"subnet"`
+	Gateway      net.IP        `json:"gateway"`
+	Routes       []types.Route `json:"routes"`
+	Args         *IPAMArgs     `json:"-"`
+	IsDebugLevel string        `json:"isDebugLevel"`
+	LogToFile    string        `json:"logToFile"`
 }
 
 type IPAMArgs struct {
@@ -44,7 +46,7 @@ type Net struct {
 	IPAM *IPAMConfig `json:"ipam"`
 }
 
-// NewIPAMConfig creates a NetworkConfig from the given network name.
+// LoadIPAMConfig NewIPAMConfig creates a NetworkConfig from the given network name.
 func LoadIPAMConfig(bytes []byte, args string) (*IPAMConfig, error) {
 	n := Net{}
 	if err := json.Unmarshal(bytes, &n); err != nil {

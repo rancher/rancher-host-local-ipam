@@ -1,5 +1,3 @@
-// Copyright 2015 CNI authors
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -20,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const lastIPFile = "last_reserved_ip"
@@ -27,7 +26,7 @@ const lastIPFile = "last_reserved_ip"
 var defaultDataDir = "/var/lib/cni/networks"
 
 type Store struct {
-	FileLock
+	*FileLock
 	dataDir string
 }
 
@@ -41,7 +40,7 @@ func New(network string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{*lk, dir}, nil
+	return &Store{lk, dir}, nil
 }
 
 func (s *Store) Reserve(id string, ip net.IP) (bool, error) {
@@ -85,7 +84,7 @@ func (s *Store) Release(ip net.IP) error {
 	return os.Remove(filepath.Join(s.dataDir, ip.String()))
 }
 
-// N.B. This function eats errors to be tolerant and
+// ReleaseByID N.B. This function eats errors to be tolerant and
 // release as much as possible
 func (s *Store) ReleaseByID(id string) error {
 	err := filepath.Walk(s.dataDir, func(path string, info os.FileInfo, err error) error {
@@ -104,4 +103,43 @@ func (s *Store) ReleaseByID(id string) error {
 		return nil
 	})
 	return err
+}
+
+func (s *Store) GetIPByID(id string) (net.IP, error) {
+	var ipAddr net.IP
+	err := filepath.Walk(s.dataDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		data, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if string(data) == id {
+			ipAddr = net.ParseIP(info.Name())
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ipAddr, nil
+}
+
+func (s *Store) GetAllIDs() ([]string, error) {
+	result := []string{}
+	err := filepath.Walk(s.dataDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if !strings.Contains(path, lastIPFile) {
+			data, err := ioutil.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			result = append(result, string(data))
+		}
+		return nil
+	})
+	return result, err
 }

@@ -15,11 +15,22 @@
 package main
 
 import (
-	"github.com/containernetworking/cni/plugins/ipam/host-local/backend/disk"
+	"fmt"
+	"os"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/rancher/go-rancher-metadata/metadata"
+	"github.com/rancher/rancher-host-local-ipam/allocator"
+	"github.com/rancher/rancher-host-local-ipam/backend/disk"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
+)
+
+const (
+	metadataURLTemplate    = "http://%s/2016-07-29"
+	defaultMetadataAddress = "169.254.169.250"
 )
 
 func main() {
@@ -27,9 +38,21 @@ func main() {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	ipamConf, err := LoadIPAMConfig(args.StdinData, args.Args)
+	ipamConf, err := allocator.LoadIPAMConfig(args.StdinData, args.Args)
 	if err != nil {
 		return err
+	}
+
+	if ipamConf.IsDebugLevel == "true" {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	if ipamConf.LogToFile != "" {
+		f, err := os.OpenFile(ipamConf.LogToFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err == nil && f != nil {
+			logrus.SetOutput(f)
+			defer f.Close()
+		}
 	}
 
 	store, err := disk.New(ipamConf.Name)
@@ -38,12 +61,12 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer store.Close()
 
-	allocator, err := NewIPAllocator(ipamConf, store)
+	ac, err := allocator.NewIPAllocator(ipamConf, store)
 	if err != nil {
 		return err
 	}
 
-	ipConf, err := allocator.Get(args.ContainerID)
+	ipConf, err := ac.Get(args.ContainerID)
 	if err != nil {
 		return err
 	}
@@ -55,9 +78,47 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	ipamConf, err := LoadIPAMConfig(args.StdinData, args.Args)
+	ipamConf, err := allocator.LoadIPAMConfig(args.StdinData, args.Args)
 	if err != nil {
 		return err
+	}
+
+	if ipamConf.IsDebugLevel == "true" {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	if ipamConf.LogToFile != "" {
+		f, err := os.OpenFile(ipamConf.LogToFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err == nil && f != nil {
+			logrus.SetOutput(f)
+			defer f.Close()
+		}
+	}
+
+	metadataAddress := os.Getenv("RANCHER_METADATA_ADDRESS")
+	if metadataAddress == "" {
+		metadataAddress = defaultMetadataAddress
+	}
+	metadataURL := fmt.Sprintf(metadataURLTemplate, metadataAddress)
+	m, err := metadata.NewClientAndWait(metadataURL)
+	if err != nil {
+		return err
+	}
+
+	containers, err := m.GetContainers()
+	if err != nil {
+		return err
+	}
+	selfHost, err := m.GetSelfHost()
+	if err != nil {
+		return err
+	}
+
+	currentContainers := map[string]bool{}
+	for _, c := range containers {
+		if c.HostUUID == selfHost.UUID {
+			currentContainers[c.ExternalId] = true
+		}
 	}
 
 	store, err := disk.New(ipamConf.Name)
@@ -66,10 +127,25 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 	defer store.Close()
 
-	allocator, err := NewIPAllocator(ipamConf, store)
+	allocator, err := allocator.NewIPAllocator(ipamConf, store)
 	if err != nil {
 		return err
 	}
 
-	return allocator.Release(args.ContainerID)
+	persistContainers, err := allocator.GetAllContainers()
+	if err != nil {
+		return err
+	}
+
+	for _, id := range persistContainers {
+		if ok, _ := currentContainers[id]; !ok {
+			logrus.Debugf("Release container %s", id)
+			err = allocator.Release(id)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

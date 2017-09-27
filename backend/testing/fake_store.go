@@ -70,3 +70,20 @@ func (s *FakeStore) ReleaseByID(id string) error {
 	}
 	return nil
 }
+
+func (s *FakeStore) GetIPByID(id string) (net.IP, error) {
+	for k, v := range s.ipMap {
+		if v == id {
+			return net.ParseIP(k), nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *FakeStore) GetAllIDs() ([]string, error) {
+	res := []string{}
+	for _, v := range s.ipMap {
+		res = append(res, v)
+	}
+	return res, nil
+}
