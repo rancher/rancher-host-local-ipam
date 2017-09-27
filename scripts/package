@@ -16,3 +16,5 @@ fi
 mkdir -p dist/artifacts
 cd bin/
 tar cvzf ../dist/artifacts/rancher-host-local-ipam-${ARCH}-${VERSION}.tar.gz .
+
+echo "Built rancher-host-local-ipam-${ARCH}-${VERSION}.tar.gz"
