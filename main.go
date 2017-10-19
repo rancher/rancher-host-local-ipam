@@ -15,22 +15,16 @@
 package main
 
 import (
-	"fmt"
+	"net"
 	"os"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/rancher/go-rancher-metadata/metadata"
 	"github.com/rancher/rancher-host-local-ipam/allocator"
 	"github.com/rancher/rancher-host-local-ipam/backend/disk"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
-)
-
-const (
-	metadataURLTemplate    = "http://%s/2016-07-29"
-	defaultMetadataAddress = "169.254.169.250"
 )
 
 func main() {
@@ -62,9 +56,23 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer store.Close()
 
+	requestedIPByLabel, err := getRequestedIPByLabel(args.ContainerID)
+	if err != nil {
+		logrus.Errorf("rancher-host-local-ipam: error getting rancher requested IP: %v", err)
+		return err
+	}
+	if requestedIPByLabel != "" {
+		ipamConf.Args.IP = net.ParseIP(requestedIPByLabel)
+	}
+
 	ac, err := allocator.NewIPAllocator(ipamConf, store)
 	if err != nil {
 		logrus.Errorf("rancher-host-local-ipam: error creating allocator: %v", err)
+		return err
+	}
+
+	err = cleanHistory(ac)
+	if err != nil {
 		return err
 	}
 
@@ -101,36 +109,6 @@ func cmdDel(args *skel.CmdArgs) error {
 		}
 	}
 
-	metadataAddress := os.Getenv("RANCHER_METADATA_ADDRESS")
-	if metadataAddress == "" {
-		metadataAddress = defaultMetadataAddress
-	}
-	metadataURL := fmt.Sprintf(metadataURLTemplate, metadataAddress)
-	m, err := metadata.NewClientAndWait(metadataURL)
-	if err != nil {
-		logrus.Errorf("rancher-host-local-ipam: error creating metadata client: %v", err)
-		return err
-	}
-
-	containers, err := m.GetContainers()
-	if err != nil {
-		logrus.Errorf("rancher-host-local-ipam: error fetching containers from metadata: %v", err)
-		return err
-	}
-	selfHost, err := m.GetSelfHost()
-	if err != nil {
-		logrus.Errorf("rancher-host-local-ipam: error fetching self from metadata: %v", err)
-		return err
-	}
-
-	currentContainers := map[string]bool{}
-	for _, c := range containers {
-		if c.HostUUID == selfHost.UUID {
-			currentContainers[c.ExternalId] = true
-		}
-	}
-	logrus.Debugf("rancher-host-local-ipam: currentContainers=%v", currentContainers)
-
 	store, err := disk.New(ipamConf.Name)
 	if err != nil {
 		logrus.Errorf("rancher-host-local-ipam: error creating store: %v", err)
@@ -138,29 +116,11 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 	defer store.Close()
 
-	allocator, err := allocator.NewIPAllocator(ipamConf, store)
+	ac, err := allocator.NewIPAllocator(ipamConf, store)
 	if err != nil {
 		logrus.Errorf("rancher-host-local-ipam: error creating allocator: %v", err)
 		return err
 	}
 
-	persistedContainers, err := allocator.GetAllContainers()
-	if err != nil {
-		logrus.Errorf("rancher-host-local-ipam: error gettings persisted containers from allocator: %v", err)
-		return err
-	}
-	logrus.Debugf("rancher-host-local-ipam: persistedContainers=%v", persistedContainers)
-
-	for _, id := range persistedContainers {
-		if ok, _ := currentContainers[id]; !ok {
-			logrus.Debugf("rancher-host-local-ipam: releasing IP for container=%s", id)
-			err = allocator.Release(id)
-			if err != nil {
-				logrus.Errorf("rancher-host-local-ipam: error releasing IP for container=%v: %v", id, err)
-				return err
-			}
-		}
-	}
-
-	return nil
+	return cleanHistory(ac)
 }

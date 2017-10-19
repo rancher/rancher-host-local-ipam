@@ -139,6 +139,15 @@ func (a *IPAllocator) Get(id string) (*types.IPConfig, error) {
 		gw = ip.NextIP(a.conf.Subnet.IP)
 	}
 
+	persistentIP, err := a.store.GetIPByID(id)
+	if err == nil && persistentIP != nil {
+		return &types.IPConfig{
+			IP:      net.IPNet{IP: persistentIP, Mask: a.conf.Subnet.Mask},
+			Gateway: gw,
+			Routes:  a.conf.Routes,
+		}, nil
+	}
+
 	var requestedIP net.IP
 	if a.conf.Args != nil {
 		requestedIP = a.conf.Args.IP
@@ -171,15 +180,6 @@ func (a *IPAllocator) Get(id string) (*types.IPConfig, error) {
 			}, nil
 		}
 		return nil, fmt.Errorf("requested IP address %q is not available in network: %s", requestedIP, a.conf.Name)
-	}
-
-	requestedIP, err := a.store.GetIPByID(id)
-	if err == nil && requestedIP != nil {
-		return &types.IPConfig{
-			IP:      net.IPNet{IP: requestedIP, Mask: a.conf.Subnet.Mask},
-			Gateway: gw,
-			Routes:  a.conf.Routes,
-		}, nil
 	}
 
 	startIP, endIP := a.getSearchRange()
